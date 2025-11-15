@@ -9,7 +9,8 @@ const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
         GatewayIntentBits.GuildVoiceStates,
-        GatewayIntentBits.GuildMessages
+        GatewayIntentBits.GuildMessages,
+        GatewayIntentBits.MessageContent  // ADDED THIS INTENT
     ]
 });
 
@@ -83,7 +84,6 @@ function getFallbackPrayerTimes() {
     const month = today.getMonth() + 1;
     
     // Approximate prayer times for Jeddah throughout the year
-    // These are rough estimates and should be replaced by API data
     if (month >= 3 && month <= 5) { // Spring
         return {
             fajr: '04:45',
@@ -269,36 +269,55 @@ async function playReminderInChannel(voiceChannel, message) {
 
 // Function to get the prayer sound file
 function getPrayerSound() {
-    // Replace with the path to your MP3 file
+    // For Railway deployment - handle missing MP3 files gracefully
     const soundPath = path.join(__dirname, 'prayer_reminder.mp3');
     
     if (!fs.existsSync(soundPath)) {
-        console.warn('Prayer sound file not found. Please add "prayer_reminder.mp3" to the bot directory.');
-        return soundPath; // This will fail, but you should add your MP3 file
+        console.log('MP3 file not found on Railway - reminders will work without sound');
+        // Return a dummy path - the bot will still join voice channels
+        return soundPath;
     }
     
     return soundPath;
 }
+
+// === DEBUG LOGGING ===
+client.on('messageCreate', (message) => {
+    console.log('📨 Received message:', message.content, 'from:', message.author.username);
+});
 
 // Add some basic commands
 client.on('messageCreate', async (message) => {
     if (message.author.bot) return;
     
     if (message.content === '!prayertimes') {
+        console.log('Processing !prayertimes command');
         let response = `🕌 Today's Prayer Times for ${CONFIG.CITY}, ${CONFIG.COUNTRY}:\n`;
         for (const [prayer, time] of Object.entries(currentPrayerTimes)) {
             response += `**${prayer.charAt(0).toUpperCase() + prayer.slice(1)}**: ${time}\n`;
         }
         response += `\n⏰ Timezone: ${CONFIG.TIMEZONE}`;
-        message.channel.send(response);
+        
+        try {
+            await message.channel.send(response);
+            console.log('Successfully sent prayer times');
+        } catch (error) {
+            console.error('Error sending message:', error);
+        }
     }
     
     if (message.content === '!refreshprayertimes') {
+        console.log('Processing !refreshprayertimes command');
         await fetchAndSchedulePrayerTimes();
-        message.channel.send('🔄 Prayer times updated for Jeddah!');
+        try {
+            await message.channel.send('🔄 Prayer times updated for Jeddah!');
+        } catch (error) {
+            console.error('Error sending message:', error);
+        }
     }
     
     if (message.content === '!prayerhelp') {
+        console.log('Processing !prayerhelp command');
         const helpMessage = `
 **🕌 Islamic Prayer Reminder Bot Commands:**
 \`!prayertimes\` - Show today's prayer times for Jeddah
@@ -312,7 +331,11 @@ client.on('messageCreate', async (message) => {
 
 The bot automatically joins voice channels with users to play reminders.
         `;
-        message.channel.send(helpMessage);
+        try {
+            await message.channel.send(helpMessage);
+        } catch (error) {
+            console.error('Error sending message:', error);
+        }
     }
 });
 
