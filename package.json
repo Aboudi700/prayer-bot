@@ -1,4 +1,5 @@
 {
+  "//": "Updated for Railway deployment",
   "name": "islamic-prayer-reminder-bot",
   "version": "1.0.0",
   "description": "Discord bot for Islamic prayer reminders",
