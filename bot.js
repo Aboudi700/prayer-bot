@@ -44,37 +44,36 @@ client.once('ready', async () => {
 // Function to fetch prayer times from API
 async function fetchPrayerTimes() {
     try {
-        const today = new Date();
-        const dateStr = today.toISOString().split('T')[0]; // YYYY-MM-DD
-        const [year, month, day] = dateStr.split('-');
+        console.log('🔄 Fetching accurate prayer times from API...');
         
-        // Using Aladhan.com API for Jeddah
-        const apiUrl = `http://api.aladhan.com/v1/timings/${day}-${month}-${year}?city=${encodeURIComponent(CONFIG.CITY)}&country=${encodeURIComponent(CONFIG.COUNTRY)}&method=${CONFIG.METHOD}&timezone=${CONFIG.TIMEZONE}`;
-        
-        console.log(`Fetching prayer times for ${CONFIG.CITY}, ${CONFIG.COUNTRY}...`);
+        const apiUrl = `https://api.aladhan.com/v1/timingsByCity?city=Jeddah&country=Saudi Arabia&method=4`;
         
         const response = await axios.get(apiUrl);
         const timings = response.data.data.timings;
         
-        // Extract the main prayer times
-        const prayerTimes = {
-            fajr: timings.Fajr,
-            dhuhr: timings.Dhuhr,
-            asr: timings.Asr,
-            maghrib: timings.Maghrib,
-            isha: timings.Isha
+        console.log('🔍 DEBUG - Raw API response times:', timings);
+        
+        currentPrayerTimes = {
+            Fajr: timings.Fajr,
+            Dhuhr: timings.Dhuhr,
+            Asr: timings.Asr,
+            Maghrib: timings.Maghrib,
+            Isha: timings.Isha
         };
         
-        console.log('Prayer times fetched:', prayerTimes);
-        return prayerTimes;
+        console.log('📅 ACCURATE Prayer times fetched:', currentPrayerTimes);
+        return currentPrayerTimes;
         
     } catch (error) {
-        console.error('Error fetching prayer times:', error.message);
-        
-        // Fallback to default times if API fails
-        const fallbackTimes = getFallbackPrayerTimes();
-        console.log('Using fallback prayer times:', fallbackTimes);
-        return fallbackTimes;
+        console.log('❌ API failed, using fallback times. Error:', error.message);
+        currentPrayerTimes = {
+            Fajr: '05:17',
+            Dhuhr: '12:05',
+            Asr: '15:15',
+            Maghrib: '17:45',
+            Isha: '19:15'
+        };
+        return currentPrayerTimes;
     }
 }
 
@@ -158,56 +157,36 @@ function scheduleAllPrayerReminders() {
 // Function to schedule the three reminders for a single prayer
 function schedulePrayerReminders(prayerName, prayerTimeStr) {
     const [hours, minutes] = prayerTimeStr.split(':').map(Number);
+    
+    // Use Saudi Arabia timezone explicitly
     const now = new Date();
-    const prayerDate = new Date();
+    const prayerDate = new Date(now.toLocaleString("en-US", {timeZone: "Asia/Riyadh"}));
     prayerDate.setHours(hours, minutes, 0, 0);
     
-    // If prayer time has already passed today, schedule for tomorrow
+    console.log(`🕒 DEBUG: ${prayerName} at ${prayerTimeStr} -> ${prayerDate.toLocaleString()}`);
+    
     if (prayerDate < now) {
         prayerDate.setDate(prayerDate.getDate() + 1);
     }
     
-    const reminders = [];
-    
-    // Helper function to schedule a single reminder
-    const scheduleReminder = (offsetMinutes, message) => {
+    const scheduleReminder = (offsetMinutes, message, shouldPing) => {
         const reminderTime = new Date(prayerDate.getTime() + offsetMinutes * 60 * 1000);
         const delay = reminderTime.getTime() - Date.now();
         
+        console.log(`🕒 ${prayerName} reminder: ${message} at ${reminderTime.toLocaleString()} (in ${Math.round(delay/1000/60)} minutes)`);
+        
         if (delay > 0) {
-            reminders.push(setTimeout(() => {
-                playReminderInAllVoiceChannels(message);
-            }, delay));
+            const timeout = setTimeout(() => {
+                sendPrayerReminderToAllChannels(prayerName, message, shouldPing);
+            }, delay);
             
-            console.log(`Scheduled ${prayerName} reminder: ${message} at ${reminderTime.toLocaleString('en-SA', { timeZone: 'Asia/Riyadh' })}`);
+            scheduledTextReminders.set(`${prayerName}_${offsetMinutes}`, timeout);
         }
     };
     
-    // Schedule all three reminders
-    scheduleReminder(-5, `${prayerName} prayer in 5 minutes`);
-    scheduleReminder(0, `${prayerName} prayer time now`);
-    scheduleReminder(10, `${prayerName} prayer was 10 minutes ago`);
-    
-    scheduledReminders.set(prayerName, reminders);
-}
-
-// Function to play reminder in all voice channels with users
-async function playReminderInAllVoiceChannels(message) {
-    console.log(`Playing reminder: ${message}`);
-    
-    // Get all guilds the bot is in
-    client.guilds.cache.forEach(guild => {
-        // Find voice channels with members
-        const voiceChannels = guild.channels.cache.filter(channel => 
-            channel.isVoiceBased() && 
-            channel.members.size > 0 && 
-            !channel.members.has(client.user.id) // Bot not already in channel
-        );
-
-        voiceChannels.forEach(channel => {
-            playReminderInChannel(channel, message);
-        });
-    });
+    scheduleReminder(-5, `${prayerName} prayer in 5 minutes`, false);
+    scheduleReminder(0, `${prayerName} prayer time now`, true);
+    scheduleReminder(10, `${prayerName} prayer was 10 minutes ago`, false);
 }
 
 // Function to play reminder in a specific voice channel
@@ -346,3 +325,4 @@ process.on('unhandledRejection', (error) => {
 
 // Login to Discord
 client.login(process.env.DISCORD_TOKEN);
+
